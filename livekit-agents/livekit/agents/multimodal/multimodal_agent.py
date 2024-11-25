@@ -156,13 +156,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
 
         # Schedule the initialization and start task
         asyncio.create_task(_init_and_start())
-         
-        asyncio.create_task(_test())
-        
-        async def _test():
-            logger.info("WAITING 60")
-            await asyncio.sleep(60)
-            _on_session_expired()
+
         
         from livekit.plugins.openai import realtime
 
@@ -176,6 +170,16 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
             self._session = self._model.session(
                 chat_ctx=self._chat_ctx, fnc_ctx=self._fnc_ctx
             )
+
+
+        
+        async def _test():
+            logger.info("WAITING 60")
+            await asyncio.sleep(60)
+            _on_session_expired()
+        
+        
+        asyncio.create_task(_test())    
 
         @self._session.on("response_content_added")
         def _on_content_added(message: realtime.RealtimeContent):
