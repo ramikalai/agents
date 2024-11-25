@@ -494,8 +494,6 @@ class RealtimeModel:
         except Exception as e:
             logger.error("Failed to renew session", exc_info=e, extra=expired_session.logging_extra())
 
-
-trigger = True
 class RealtimeSession(utils.EventEmitter[EventTypes]):
     class InputAudioBuffer:
         def __init__(self, sess: RealtimeSession) -> None:
@@ -761,10 +759,8 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         
         # Handle session expiration by notifying the model to renew
         self.on("session_expired", lambda: self._loop.call_soon(lambda: self.emit("renew_session", self)))
-        if trigger:
-            # Trigger session expiration for testing purposes
-            asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
-            trigger = False
+        # Trigger session expiration for testing purposes
+        asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
         
     def add_model_listener(self, model: RealtimeModel):
         """Add a listener for the model to handle renewal."""
