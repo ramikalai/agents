@@ -156,13 +156,6 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         # Schedule the initialization and start task
         asyncio.create_task(_init_and_start())
         
-        
-        async def _test():
-            await asyncio.sleep(60)
-            _on_session_expired()
-        
-        asyncio.create_task(_test())
-        
         from livekit.plugins.openai import realtime
 
         @self._session.on("session_expired")
@@ -261,7 +254,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         @self._session.on("function_calls_finished")
         def _function_calls_finished(called_fncs: list[llm.CalledFunction]):
             self.emit("function_calls_finished", called_fncs)
-
+        
     def _update_state(self, state: AgentState, delay: float = 0.0):
         """Set the current state of the agent"""
 
@@ -342,6 +335,11 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         async for frame in self._input_audio_ch:
             for f in bstream.write(frame.data.tobytes()):
                 self._session.input_audio_buffer.append(f)
+        
+        
+        print("WAITING 60")
+        await asyncio.sleep(60)
+        self._on_session_expired()
 
     def _on_participant_connected(self, participant: rtc.RemoteParticipant):
         if self._linked_participant is None:
