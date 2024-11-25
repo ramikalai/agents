@@ -472,7 +472,7 @@ class RealtimeModel:
         try:
             # Close the expired session if not already closed
             await expired_session.aclose()
-            self.sessions = []
+            self._rt_sessions = []
             
             # Create a new session with the same options
             new_session = self.session(
