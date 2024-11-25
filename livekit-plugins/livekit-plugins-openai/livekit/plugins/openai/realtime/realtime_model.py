@@ -757,8 +757,8 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
 
         self._fnc_tasks = utils.aio.TaskSet()
         
-        # Handle session expiration by renewing
-        self.on("session_expired", lambda: asyncio.create_task(self._renew_session()))
+        # Handle session expiration by notifying the model to renew
+        self.on("session_expired", lambda: self._loop.call_soon(lambda: self.emit("renew_session", self)))
         
         # Trigger session expiration for testing purposes
         asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
