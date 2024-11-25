@@ -68,7 +68,6 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         transcription: AgentTranscriptionOptions = AgentTranscriptionOptions(),
         loop: asyncio.AbstractEventLoop | None = None,
     ):
-        print("INIT AGENT")
         super().__init__()
         self._loop = loop or asyncio.get_event_loop()
 
@@ -338,7 +337,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 self._session.input_audio_buffer.append(f)
         
         
-        print("WAITING 60")
+        logger.error("WAITING 60")
         await asyncio.sleep(60)
         self._on_session_expired()
 
