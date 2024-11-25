@@ -452,6 +452,7 @@ class RealtimeModel:
             http_session=self._ensure_session(),
             loop=self._loop,
         )
+        new_session.add_model_listener(self)
         self._rt_sessions.append(new_session)
         return new_session
 
@@ -488,8 +489,7 @@ class RealtimeModel:
             )
 
             # Listen for future expiration events and renew if needed
-            new_session.on("session_expired", lambda: asyncio.create_task(self.renew_session(new_session)))
-
+            new_session.add_model_listener(self)
             logger.info("Session renewed successfully", extra=new_session.logging_extra())
         except Exception as e:
             logger.error("Failed to renew session", exc_info=e, extra=expired_session.logging_extra())
@@ -762,11 +762,10 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         
         # Trigger session expiration for testing purposes
         asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
-
-    async def _renew_session(self) -> None:
-        """Helper function to trigger a session renewal."""
-        logger.info("Attempting to renew session", extra=self.logging_extra())
-        await self._opts.model.renew_session(self)
+        
+    def add_model_listener(self, model: RealtimeModel):
+        """Add a listener for the model to handle renewal."""
+        self.on("renew_session", lambda session: asyncio.create_task(model.renew_session(session)))
 
     async def aclose(self) -> None:
         if self._send_ch.closed:
