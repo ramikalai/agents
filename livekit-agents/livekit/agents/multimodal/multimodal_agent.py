@@ -160,6 +160,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
 
         @self._session.on("session_expired")
         def _on_session_expired():
+            print("HELLO FROM RECEIVER")
             logger.warning(
                 "The realtime API session has expired. Creating a new session with existing context."
             )
@@ -168,6 +169,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 chat_ctx=self._chat_ctx, fnc_ctx=self._fnc_ctx
             )
 
+            print("STARTING TASK AGAIN")
             # Schedule the initialization and start task
             asyncio.create_task(_init_and_start())
 

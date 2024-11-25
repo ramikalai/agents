@@ -1051,6 +1051,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
     def _handle_session_created(
         self, session_created: api_proto.ServerEvent.SessionCreated
     ):
+        print("HELLO!!")
         self._session_id = session_created["session"]["id"]
 
     def _handle_error(self, error: api_proto.ServerEvent.Error):
