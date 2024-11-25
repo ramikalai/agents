@@ -182,7 +182,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         async def _test():
             logger.info("WAITING 60")
             await asyncio.sleep(60)
-            _on_session_expired()
+            await _on_session_expired()
         
         asyncio.create_task(_test())    
 
