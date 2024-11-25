@@ -170,14 +170,15 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
             self._session = self._model.session(
                 chat_ctx=self._chat_ctx, fnc_ctx=self._fnc_ctx
             )
-
-
+            
+            logger.info("restarting main task")
+            asyncio.create_task(_init_and_start())
+            
         
         async def _test():
             logger.info("WAITING 60")
             await asyncio.sleep(60)
             _on_session_expired()
-        
         
         asyncio.create_task(_test())    
 
