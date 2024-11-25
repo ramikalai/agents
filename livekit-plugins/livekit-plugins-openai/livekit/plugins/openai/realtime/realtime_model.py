@@ -458,7 +458,41 @@ class RealtimeModel:
     async def aclose(self) -> None:
         for session in self._rt_sessions:
             await session.aclose()
+    
+    async def renew_session(self, expired_session: RealtimeSession) -> None:
+        """
+        Renew an expired session.
+        
+        Args:
+            expired_session (RealtimeSession): The expired session to renew.
+        """
+        logger.info("Renewing expired session", extra=expired_session.logging_extra())
+        try:
+            # Close the expired session if not already closed
+            await expired_session.aclose()
+            
+            # Create a new session with the same options
+            new_session = self.session(
+                chat_ctx=expired_session.chat_ctx_copy(),
+                fnc_ctx=expired_session.fnc_ctx,
+                modalities=expired_session._opts.modalities,
+                instructions=expired_session._opts.instructions,
+                voice=expired_session._opts.voice,
+                input_audio_format=expired_session._opts.input_audio_format,
+                output_audio_format=expired_session._opts.output_audio_format,
+                input_audio_transcription=expired_session._opts.input_audio_transcription,
+                turn_detection=expired_session._opts.turn_detection,
+                tool_choice=expired_session._opts.tool_choice,
+                temperature=expired_session._opts.temperature,
+                max_response_output_tokens=expired_session._opts.max_response_output_tokens,
+            )
 
+            # Listen for future expiration events and renew if needed
+            new_session.on("session_expired", lambda: asyncio.create_task(self.renew_session(new_session)))
+
+            logger.info("Session renewed successfully", extra=new_session.logging_extra())
+        except Exception as e:
+            logger.error("Failed to renew session", exc_info=e, extra=expired_session.logging_extra())
 
 class RealtimeSession(utils.EventEmitter[EventTypes]):
     class InputAudioBuffer:
@@ -722,6 +756,17 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._init_sync_task = asyncio.create_task(self.set_chat_ctx(chat_ctx))
 
         self._fnc_tasks = utils.aio.TaskSet()
+        
+        # Handle session expiration by renewing
+        self.on("session_expired", lambda: asyncio.create_task(self._renew_session()))
+        
+        # Trigger session expiration for testing purposes
+        asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
+
+    async def _renew_session(self) -> None:
+        """Helper function to trigger a session renewal."""
+        logger.info("Attempting to renew session", extra=self.logging_extra())
+        await self._opts.model.renew_session(self)
 
     async def aclose(self) -> None:
         if self._send_ch.closed:
