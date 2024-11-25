@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 import aiohttp
 from livekit import rtc
 from livekit.agents import llm, utils
+from livekit.agents.multimodal import MultimodalAgent 
 from livekit.agents.llm import _oai_api
 from typing_extensions import TypedDict
 
@@ -471,6 +472,7 @@ class RealtimeModel:
         try:
             # Close the expired session if not already closed
             await expired_session.aclose()
+            self.sessions = []
             
             # Create a new session with the same options
             new_session = self.session(
@@ -487,13 +489,18 @@ class RealtimeModel:
                 temperature=expired_session._opts.temperature,
                 max_response_output_tokens=expired_session._opts.max_response_output_tokens,
             )
-
-            # Listen for future expiration events and renew if needed
-            new_session.add_model_listener(self)
+            
+            self.agent._session = new_session
+            self.agent_registerHandlers()
+            
             logger.info("Session renewed successfully", extra=new_session.logging_extra())
         except Exception as e:
             logger.error("Failed to renew session", exc_info=e, extra=expired_session.logging_extra())
 
+    def registerAgent(self, agent: MultimodalAgent, registerHandlers):
+        self.agent = agent
+        self.agent_registerHandlers = registerHandlers
+    
 class RealtimeSession(utils.EventEmitter[EventTypes]):
     class InputAudioBuffer:
         def __init__(self, sess: RealtimeSession) -> None:
