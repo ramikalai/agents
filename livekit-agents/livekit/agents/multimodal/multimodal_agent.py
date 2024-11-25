@@ -119,6 +119,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
     def start(
         self, room: rtc.Room, participant: rtc.RemoteParticipant | str | None = None
     ) -> None:
+        logger.info("STARTING AGENT")
         if self._started:
             raise RuntimeError("voice assistant already started")
 
@@ -160,7 +161,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
 
         @self._session.on("session_expired")
         def _on_session_expired():
-            print("HELLO FROM RECEIVER")
+            logger.info("HELLO FROM RECEIVER")
             logger.warning(
                 "The realtime API session has expired. Creating a new session with existing context."
             )
@@ -168,10 +169,6 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
             self._session = self._model.session(
                 chat_ctx=self._chat_ctx, fnc_ctx=self._fnc_ctx
             )
-
-            print("STARTING TASK AGAIN")
-            # Schedule the initialization and start task
-            asyncio.create_task(_init_and_start())
 
         @self._session.on("response_content_added")
         def _on_content_added(message: realtime.RealtimeContent):
@@ -337,7 +334,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 self._session.input_audio_buffer.append(f)
         
         
-        logger.error("WAITING 60")
+        logger.info("WAITING 60")
         await asyncio.sleep(60)
         self._on_session_expired()
 
