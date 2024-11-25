@@ -155,7 +155,14 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
 
         # Schedule the initialization and start task
         asyncio.create_task(_init_and_start())
-
+        
+        
+        async def _test():
+            await asyncio.sleep(60)
+            _on_session_expired()
+        
+        asyncio.create_task(_test())
+        
         from livekit.plugins.openai import realtime
 
         @self._session.on("session_expired")
