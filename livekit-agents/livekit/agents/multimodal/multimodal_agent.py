@@ -161,18 +161,22 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         from livekit.plugins.openai import realtime
 
         @self._session.on("session_expired")
-        def _on_session_expired():
+        async def _on_session_expired():
             logger.info("HELLO FROM RECEIVER")
             logger.warning(
                 "The realtime API session has expired. Creating a new session with existing context."
             )
 
+            logger.info("Closing old session.")
+            await self._model.aclose()
+            
+            logger.info("old session closed, starting new session")
             self._session = self._model.session(
                 chat_ctx=self._chat_ctx, fnc_ctx=self._fnc_ctx
             )
             
-            logger.info("restarting main task")
-            asyncio.create_task(_init_and_start())
+            # logger.info("restarting main task")
+            # asyncio.create_task(_init_and_start())
             
         
         async def _test():
