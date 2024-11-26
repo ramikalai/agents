@@ -785,6 +785,11 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self.session_update()  # initial session init
         
         logger.info("SESSION UPDATE COMPLETE")
+        
+        chat_ctx = self.chat_ctx_copy()
+        await self.set_chat_ctx(chat_ctx)
+        
+        logger.info("Syncronized chat history")
     
     def add_model_listener(self, model: RealtimeModel):
         """Add a listener for the model to handle renewal."""
@@ -977,7 +982,8 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         try:
             self._send_ch.send_nowait(msg)
         except Exception:
-            logger.info("caught queue message exception, carry on")
+            # TODO: Send during session switch. Wait and try again.
+            logger.error("caught queue message exception, carry on")
 
     @utils.log_exceptions(logger=logger)
     async def _main_task(self) -> None:
@@ -1024,6 +1030,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         async def _send_task():
             nonlocal closing
             async for msg in self._send_ch:
+                logger.info("SENDING MESSAGE:", msg)
                 await ws_conn.send_json(msg)
 
             closing = True
