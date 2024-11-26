@@ -770,16 +770,21 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
     
     async def renew_session(self):
+        logger.info("CLOSING")
         await self.aclose()
         
+        logger.info("CREATE NEW MAIN")
         self._main_atask = asyncio.create_task(
             self._main_task(), name="openai-realtime-session"
         )
         
+        logger.info("INIT NEW SEND CH")
         self._send_ch = utils.aio.Chan[api_proto.ClientEvents]()
         
         self._session_id = "not-connected"
         self.session_update()  # initial session init
+        
+        logger.info("SESSION UPDATE COMPLETE")
     
     def add_model_listener(self, model: RealtimeModel):
         """Add a listener for the model to handle renewal."""
