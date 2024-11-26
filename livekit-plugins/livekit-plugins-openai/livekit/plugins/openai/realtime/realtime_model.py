@@ -1030,7 +1030,6 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         async def _send_task():
             nonlocal closing
             async for msg in self._send_ch:
-                logger.info("SENDING MESSAGE:", msg)
                 await ws_conn.send_json(msg)
 
             closing = True
