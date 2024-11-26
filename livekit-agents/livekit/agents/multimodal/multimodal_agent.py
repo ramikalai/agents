@@ -143,6 +143,19 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         self._session = self._model.session(
             chat_ctx=self._chat_ctx, fnc_ctx=self._fnc_ctx
         )
+        
+        # Create a task to wait for initialization and start the main task
+        async def _init_and_start():
+            try:
+                await self._session._init_sync_task
+                logger.info("Session initialized with chat context")
+                self._main_atask = asyncio.create_task(self._main_task())
+            except Exception as e:
+                logger.exception("Failed to initialize session")
+                raise e
+
+        # Schedule the initialization and start task
+        asyncio.create_task(_init_and_start())
                 
         from livekit.plugins.openai import realtime
                
@@ -205,7 +218,6 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
 
         @self._session.on("input_speech_started")
         def _input_speech_started():
-            logger.info("USER SPEAKING")
             self.emit("user_started_speaking")
             self._update_state("listening")
             if self._playing_handle is not None and not self._playing_handle.done():
@@ -228,32 +240,6 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
         @self._session.on("function_calls_finished")
         def _function_calls_finished(called_fncs: list[llm.CalledFunction]):
             self.emit("function_calls_finished", called_fncs)
-
-        # def registerHandlers():
-        #     self._session.on("response_content_added", _on_content_added)
-        #     self._session.on("input_speech_committed", _input_speech_committed)
-        #     self._session.on("input_speech_transcription_completed", _input_speech_transcription_completed)
-        #     self._session.on("input_speech_started", _input_speech_started)
-        #     self._session.on("input_speech_stopped", _input_speech_stopped)
-        #     self._session.on("function_calls_collected", _function_calls_collected)
-        #     self._session.on("function_calls_finished", _function_calls_finished)
-        
-        # registerHandlers()
-        
-        # self._model.registerAgent(self, registerHandlers)
-        
-        # Create a task to wait for initialization and start the main task
-        async def _init_and_start():
-            try:
-                await self._session._init_sync_task
-                logger.info("Session initialized with chat context")
-                self._main_atask = asyncio.create_task(self._main_task())
-            except Exception as e:
-                logger.exception("Failed to initialize session")
-                raise e
-
-        # Schedule the initialization and start task
-        asyncio.create_task(_init_and_start())
         
     def _update_state(self, state: AgentState, delay: float = 0.0):
         """Set the current state of the agent"""

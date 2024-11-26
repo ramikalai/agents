@@ -461,46 +461,6 @@ class RealtimeModel:
         for session in self._rt_sessions:
             await session.aclose()
     
-    async def renew_session(self, expired_session: RealtimeSession) -> None:
-        """
-        Renew an expired session.
-        
-        Args:
-            expired_session (RealtimeSession): The expired session to renew.
-        """
-        logger.info("Renewing expired session", extra=expired_session.logging_extra())
-        try:
-            # Close the expired session if not already closed
-            await expired_session.aclose()
-            self._rt_sessions = []
-            
-            # Create a new session with the same options
-            new_session = self.session(
-                chat_ctx=expired_session.chat_ctx_copy(),
-                fnc_ctx=expired_session.fnc_ctx,
-                modalities=expired_session._opts.modalities,
-                instructions=expired_session._opts.instructions,
-                voice=expired_session._opts.voice,
-                input_audio_format=expired_session._opts.input_audio_format,
-                output_audio_format=expired_session._opts.output_audio_format,
-                input_audio_transcription=expired_session._opts.input_audio_transcription,
-                turn_detection=expired_session._opts.turn_detection,
-                tool_choice=expired_session._opts.tool_choice,
-                temperature=expired_session._opts.temperature,
-                max_response_output_tokens=expired_session._opts.max_response_output_tokens,
-            )
-            
-            self.agent._session = new_session
-            self.agent_registerHandlers()
-            
-            logger.info("Session renewed successfully", extra=new_session.logging_extra())
-        except Exception as e:
-            logger.error("Failed to renew session", exc_info=e, extra=expired_session.logging_extra())
-
-    def registerAgent(self, agent: MultimodalAgent, registerHandlers):
-        self.agent = agent
-        self.agent_registerHandlers = registerHandlers
-    
 class RealtimeSession(utils.EventEmitter[EventTypes]):
     class InputAudioBuffer:
         def __init__(self, sess: RealtimeSession) -> None:
@@ -791,10 +751,6 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         await self.set_chat_ctx(chat_ctx)
         
         logger.info("Syncronized chat history")
-    
-    def add_model_listener(self, model: RealtimeModel):
-        """Add a listener for the model to handle renewal."""
-        self.on("renew_session", lambda session: asyncio.create_task(model.renew_session(session)))
 
     async def aclose(self) -> None:
         if self._send_ch.closed:
