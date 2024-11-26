@@ -787,6 +787,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         logger.info("SESSION UPDATE COMPLETE")
         
         chat_ctx = self.chat_ctx_copy()
+        self._remote_converstation_items = remote_items._RemoteConversationItems()
         await self.set_chat_ctx(chat_ctx)
         
         logger.info("Syncronized chat history")
