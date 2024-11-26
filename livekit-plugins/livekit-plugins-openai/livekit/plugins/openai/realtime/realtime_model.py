@@ -974,7 +974,10 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         item.content = content
 
     def _queue_msg(self, msg: api_proto.ClientEvents) -> None:
-        self._send_ch.send_nowait(msg)
+        try:
+            self._send_ch.send_nowait(msg)
+        except Exception:
+            logger.info("caught queue message exception, carry on")
 
     @utils.log_exceptions(logger=logger)
     async def _main_task(self) -> None:

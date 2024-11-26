@@ -146,7 +146,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 
         from livekit.plugins.openai import realtime
                
-        # @self._session.on("response_content_added")
+        @self._session.on("response_content_added")
         def _on_content_added(message: realtime.RealtimeContent):
             if message.content_type == "text":
                 logger.warning(
@@ -171,7 +171,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 audio_stream=message.audio_stream,
             )
 
-        # @self._session.on("input_speech_committed")
+        @self._session.on("input_speech_committed")
         def _input_speech_committed():
             self._stt_forwarder.update(
                 stt.SpeechEvent(
@@ -180,7 +180,7 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 )
             )
 
-        # @self._session.on("input_speech_transcription_completed")
+        @self._session.on("input_speech_transcription_completed")
         def _input_speech_transcription_completed(
             ev: realtime.InputTranscriptionCompleted,
         ):
@@ -203,8 +203,9 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                 extra={"user_transcript": ev.transcript},
             )
 
-        # @self._session.on("input_speech_started")
+        @self._session.on("input_speech_started")
         def _input_speech_started():
+            logger.info("USER SPEAKING")
             self.emit("user_started_speaking")
             self._update_state("listening")
             if self._playing_handle is not None and not self._playing_handle.done():
@@ -216,30 +217,30 @@ class MultimodalAgent(utils.EventEmitter[EventTypes]):
                     audio_end_ms=int(self._playing_handle.audio_samples / 24000 * 1000),
                 )
 
-        # @self._session.on("input_speech_stopped")
+        @self._session.on("input_speech_stopped")
         def _input_speech_stopped():
             self.emit("user_stopped_speaking")
 
-        # @self._session.on("function_calls_collected")
+        @self._session.on("function_calls_collected")
         def _function_calls_collected(fnc_call_infos: list[llm.FunctionCallInfo]):
             self.emit("function_calls_collected", fnc_call_infos)
 
-        # @self._session.on("function_calls_finished")
+        @self._session.on("function_calls_finished")
         def _function_calls_finished(called_fncs: list[llm.CalledFunction]):
             self.emit("function_calls_finished", called_fncs)
 
-        def registerHandlers():
-            self._session.on("response_content_added", _on_content_added)
-            self._session.on("input_speech_committed", _input_speech_committed)
-            self._session.on("input_speech_transcription_completed", _input_speech_transcription_completed)
-            self._session.on("input_speech_started", _input_speech_started)
-            self._session.on("input_speech_stopped", _input_speech_stopped)
-            self._session.on("function_calls_collected", _function_calls_collected)
-            self._session.on("function_calls_finished", _function_calls_finished)
+        # def registerHandlers():
+        #     self._session.on("response_content_added", _on_content_added)
+        #     self._session.on("input_speech_committed", _input_speech_committed)
+        #     self._session.on("input_speech_transcription_completed", _input_speech_transcription_completed)
+        #     self._session.on("input_speech_started", _input_speech_started)
+        #     self._session.on("input_speech_stopped", _input_speech_stopped)
+        #     self._session.on("function_calls_collected", _function_calls_collected)
+        #     self._session.on("function_calls_finished", _function_calls_finished)
         
-        registerHandlers()
+        # registerHandlers()
         
-        self._model.registerAgent(self, registerHandlers)
+        # self._model.registerAgent(self, registerHandlers)
         
         # Create a task to wait for initialization and start the main task
         async def _init_and_start():
