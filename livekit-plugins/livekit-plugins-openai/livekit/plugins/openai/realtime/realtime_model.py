@@ -775,6 +775,9 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._main_atask = asyncio.create_task(
             self._main_task(), name="openai-realtime-session"
         )
+        
+        self._send_ch = utils.aio.Chan[api_proto.ClientEvents]()
+        
         self._session_id = "not-connected"
         self.session_update()  # initial session init
     
