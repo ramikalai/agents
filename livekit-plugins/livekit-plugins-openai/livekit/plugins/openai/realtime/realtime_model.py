@@ -453,7 +453,7 @@ class RealtimeModel:
             http_session=self._ensure_session(),
             loop=self._loop,
         )
-        new_session.add_model_listener(self)
+
         self._rt_sessions.append(new_session)
         return new_session
 
