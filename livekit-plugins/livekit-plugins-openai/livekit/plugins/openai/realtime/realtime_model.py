@@ -769,7 +769,9 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         # Trigger session expiration for testing purposes
         asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
     
-    def renew_session(self):
+    async def renew_session(self):
+        await self.aclose()
+        
         self._main_atask = asyncio.create_task(
             self._main_task(), name="openai-realtime-session"
         )
