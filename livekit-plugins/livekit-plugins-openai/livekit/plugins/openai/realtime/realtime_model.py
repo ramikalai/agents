@@ -765,10 +765,17 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._fnc_tasks = utils.aio.TaskSet()
         
         # Handle session expiration by notifying the model to renew
-        self.on("session_expired", lambda: self._loop.call_soon(lambda: self.emit("renew_session", self)))
+        self.on("session_expired", lambda: self._loop.call_soon(lambda: self.renew_session()))
         # Trigger session expiration for testing purposes
         asyncio.get_event_loop().call_later(65, lambda: self.emit("session_expired"))
-        
+    
+    def renew_session(self):
+        self._main_atask = asyncio.create_task(
+            self._main_task(), name="openai-realtime-session"
+        )
+        self._session_id = "not-connected"
+        self.session_update()  # initial session init
+    
     def add_model_listener(self, model: RealtimeModel):
         """Add a listener for the model to handle renewal."""
         self.on("renew_session", lambda session: asyncio.create_task(model.renew_session(session)))
