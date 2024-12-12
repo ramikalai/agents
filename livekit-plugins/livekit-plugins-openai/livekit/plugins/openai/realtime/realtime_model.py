@@ -740,6 +740,11 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._is_recovering = False
         # Handle session expiration by notifying the model to renew
         self.on("session_expired", lambda: self._loop.create_task(self.renew_session()))
+        async def timer():
+            await asyncio.sleep(120)
+            self.emit("session_expired")
+
+        asyncio.create_task(timer())
 
     async def renew_session(self):
         logger.info("attempting to renew session")
