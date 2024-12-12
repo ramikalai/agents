@@ -32,6 +32,8 @@ def _encoding_from_format(output_format: TTSEncoding) -> _Encoding:
         return "mp3"
     elif output_format.startswith("pcm"):
         return "pcm"
+    elif output_format.startswith("wav"):
+        return "pcm"
 
     raise ValueError(f"Unknown format: {output_format}")
 
@@ -46,7 +48,7 @@ class Voice:
 DEFAULT_VOICE = Voice(
     id="s3://peregrine-voices/mel22/manifest.json",
     name="Will",
-    voice_engine="PlayHT2.0",
+    voice_engine="Play3.0-mini",
 )
 
 ACCEPT_HEADER = {
@@ -57,10 +59,10 @@ ACCEPT_HEADER = {
     "mulaw": "audio/basic",  # commonly used for mulaw
 }
 
+
 API_BASE_URL_V2 = "https://api.play.ht/api/v2"
 AUTHORIZATION_HEADER = "AUTHORIZATION"
 USERID_HEADER = "X-USER-ID"
-PLAYHT_TTS_SAMPLE_RATE = 48000
 PLAYHT_TTS_CHANNELS = 1
 
 _TTSEncoding = Literal["mp3", "wav", "ogg", "flac", "mulaw"]
@@ -84,6 +86,7 @@ class TTS(tts.TTS):
         api_key: str | None = None,
         user_id: str | None = None,
         base_url: str | None = None,
+        sample_rate: int = 24000,
         encoding: _TTSEncoding = "wav",
         http_session: aiohttp.ClientSession | None = None,
     ) -> None:
@@ -91,7 +94,7 @@ class TTS(tts.TTS):
             capabilities=tts.TTSCapabilities(
                 streaming=False,
             ),
-            sample_rate=PLAYHT_TTS_SAMPLE_RATE,
+            sample_rate=sample_rate,
             num_channels=PLAYHT_TTS_CHANNELS,
         )
         api_key = api_key or os.environ.get("PLAYHT_API_KEY")
@@ -107,7 +110,7 @@ class TTS(tts.TTS):
             user_id=user_id,
             api_key=api_key,
             base_url=base_url or API_BASE_URL_V2,
-            sample_rate=PLAYHT_TTS_SAMPLE_RATE,
+            sample_rate=sample_rate,
             encoding=encoding,
         )
         self._session = http_session
@@ -174,6 +177,7 @@ class ChunkedStream(tts.ChunkedStream):
         json_data = {
             "text": self._input_text,
             "output_format": self._opts.encoding,
+            "sample_rate": self._opts.sample_rate,
             "voice": self._opts.voice.id,
         }
         try:

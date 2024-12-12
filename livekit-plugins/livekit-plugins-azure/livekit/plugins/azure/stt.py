@@ -15,6 +15,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import weakref
+from copy import deepcopy
 from dataclasses import dataclass
 
 from livekit import rtc
@@ -54,7 +56,10 @@ class STT(stt.STT):
         segmentation_silence_timeout_ms: int | None = None,
         segmentation_max_time_ms: int | None = None,
         segmentation_strategy: str | None = None,
-        languages: list[str] = [],  # when empty, auto-detect the language
+        # Azure handles multiple languages and can auto-detect the language used. It requires the candidate set to be set.
+        languages: list[str] = ["en-US"],
+        # for compatibility with other STT plugins
+        language: str | None = None,
     ):
         """
         Create a new instance of Azure STT.
@@ -82,6 +87,9 @@ class STT(stt.STT):
                 "AZURE_SPEECH_HOST or AZURE_SPEECH_KEY and AZURE_SPEECH_REGION or speech_auth_token and AZURE_SPEECH_REGION must be set"
             )
 
+        if language:
+            languages = [language]
+
         self._config = STTOptions(
             speech_key=speech_key,
             speech_region=speech_region,
@@ -94,6 +102,7 @@ class STT(stt.STT):
             segmentation_max_time_ms=segmentation_max_time_ms,
             segmentation_strategy=segmentation_strategy,
         )
+        self._streams = weakref.WeakSet[SpeechStream]()
 
     async def _recognize_impl(
         self,
@@ -107,10 +116,28 @@ class STT(stt.STT):
     def stream(
         self,
         *,
+        languages: list[str] | None = None,
         language: str | None = None,
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> "SpeechStream":
-        return SpeechStream(stt=self, opts=self._config, conn_options=conn_options)
+        config = deepcopy(self._config)
+        if language and not languages:
+            languages = [language]
+        if languages:
+            config.languages = languages
+        stream = SpeechStream(stt=self, opts=config, conn_options=conn_options)
+        self._streams.add(stream)
+        return stream
+
+    def update_options(
+        self, *, language: str | None = None, languages: list[str] | None = None
+    ):
+        if language and not languages:
+            languages = [language]
+        if languages is not None:
+            self._config.languages = languages
+            for stream in self._streams:
+                stream.update_options(languages=languages)
 
 
 class SpeechStream(stt.SpeechStream):
@@ -127,50 +154,81 @@ class SpeechStream(stt.SpeechStream):
         self._session_started_event = asyncio.Event()
 
         self._loop = asyncio.get_running_loop()
+        self._reconnect_event = asyncio.Event()
+
+    def update_options(
+        self, *, language: str | None = None, languages: list[str] | None = None
+    ):
+        if language and not languages:
+            languages = [language]
+        if languages:
+            self._opts.languages = languages
+            self._reconnect_event.set()
 
     async def _run(self) -> None:
-        self._stream = speechsdk.audio.PushAudioInputStream(
-            stream_format=speechsdk.audio.AudioStreamFormat(
-                samples_per_second=self._opts.sample_rate,
-                bits_per_sample=16,
-                channels=self._opts.num_channels,
+        while True:
+            self._stream = speechsdk.audio.PushAudioInputStream(
+                stream_format=speechsdk.audio.AudioStreamFormat(
+                    samples_per_second=self._opts.sample_rate,
+                    bits_per_sample=16,
+                    channels=self._opts.num_channels,
+                )
             )
-        )
-        self._recognizer = _create_speech_recognizer(
-            config=self._opts, stream=self._stream
-        )
-        self._recognizer.recognizing.connect(self._on_recognizing)
-        self._recognizer.recognized.connect(self._on_recognized)
-        self._recognizer.speech_start_detected.connect(self._on_speech_start)
-        self._recognizer.speech_end_detected.connect(self._on_speech_end)
-        self._recognizer.session_started.connect(self._on_session_started)
-        self._recognizer.session_stopped.connect(self._on_session_stopped)
-        self._recognizer.start_continuous_recognition()
-
-        try:
-            await asyncio.wait_for(
-                self._session_started_event.wait(), self._conn_options.timeout
+            self._recognizer = _create_speech_recognizer(
+                config=self._opts, stream=self._stream
             )
+            self._recognizer.recognizing.connect(self._on_recognizing)
+            self._recognizer.recognized.connect(self._on_recognized)
+            self._recognizer.speech_start_detected.connect(self._on_speech_start)
+            self._recognizer.speech_end_detected.connect(self._on_speech_end)
+            self._recognizer.session_started.connect(self._on_session_started)
+            self._recognizer.session_stopped.connect(self._on_session_stopped)
+            self._recognizer.start_continuous_recognition()
 
-            async for input in self._input_ch:
-                if isinstance(input, rtc.AudioFrame):
-                    self._stream.write(input.data.tobytes())
+            try:
+                await asyncio.wait_for(
+                    self._session_started_event.wait(), self._conn_options.timeout
+                )
 
-            self._stream.close()
-            await self._session_stopped_event.wait()
-        finally:
+                async def process_input():
+                    async for input in self._input_ch:
+                        if isinstance(input, rtc.AudioFrame):
+                            self._stream.write(input.data.tobytes())
 
-            def _cleanup():
-                self._recognizer.stop_continuous_recognition()
-                del self._recognizer
+                process_input_task = asyncio.create_task(process_input())
+                wait_reconnect_task = asyncio.create_task(self._reconnect_event.wait())
 
-            await asyncio.to_thread(_cleanup)
+                try:
+                    await asyncio.wait(
+                        [process_input_task, wait_reconnect_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+                finally:
+                    await utils.aio.gracefully_cancel(
+                        process_input_task, wait_reconnect_task
+                    )
+
+                self._stream.close()
+                await self._session_stopped_event.wait()
+            finally:
+
+                def _cleanup():
+                    self._recognizer.stop_continuous_recognition()
+                    del self._recognizer
+
+                await asyncio.to_thread(_cleanup)
+                if not self._reconnect_event.is_set():
+                    break
+                self._reconnect_event.clear()
 
     def _on_recognized(self, evt: speechsdk.SpeechRecognitionEventArgs):
         detected_lg = speechsdk.AutoDetectSourceLanguageResult(evt.result).language
         text = evt.result.text.strip()
         if not text:
             return
+
+        if not detected_lg and self._opts.languages:
+            detected_lg = self._opts.languages[0]
 
         final_data = stt.SpeechData(
             language=detected_lg, confidence=1.0, text=evt.result.text
@@ -189,6 +247,9 @@ class SpeechStream(stt.SpeechStream):
         text = evt.result.text.strip()
         if not text:
             return
+
+        if not detected_lg and self._opts.languages:
+            detected_lg = self._opts.languages[0]
 
         interim_data = stt.SpeechData(
             language=detected_lg, confidence=0.0, text=evt.result.text
@@ -269,7 +330,7 @@ def _create_speech_recognizer(
         )
 
     auto_detect_source_language_config = None
-    if config.languages:
+    if config.languages and len(config.languages) > 1:
         auto_detect_source_language_config = (
             speechsdk.languageconfig.AutoDetectSourceLanguageConfig(
                 languages=config.languages

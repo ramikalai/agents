@@ -18,6 +18,7 @@ import asyncio
 import dataclasses
 import json
 import os
+import weakref
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional, Tuple
@@ -42,7 +43,6 @@ from .log import logger
 from .models import DeepgramLanguages, DeepgramModels
 
 BASE_URL = "https://api.deepgram.com/v1/listen"
-BASE_URL_WS = "wss://api.deepgram.com/v1/listen"
 
 
 # This is the magic number during testing that we use to determine if a frame is loud enough
@@ -121,11 +121,13 @@ class STT(stt.STT):
         sample_rate: int = 16000,
         no_delay: bool = True,
         endpointing_ms: int = 25,
-        filler_words: bool = False,
+        # enable filler words by default to improve turn detector accuracy
+        filler_words: bool = True,
         keywords: list[Tuple[str, float]] = [],
         profanity_filter: bool = False,
         api_key: str | None = None,
         http_session: aiohttp.ClientSession | None = None,
+        base_url: str = BASE_URL,
         energy_filter: AudioEnergyFilter | bool = False,
     ) -> None:
         """
@@ -140,26 +142,13 @@ class STT(stt.STT):
                 streaming=True, interim_results=interim_results
             )
         )
+        self._base_url = base_url
 
         api_key = api_key or os.environ.get("DEEPGRAM_API_KEY")
         if api_key is None:
             raise ValueError("Deepgram API key is required")
 
-        if language not in ("en-US", "en") and model in (
-            "nova-2-meeting",
-            "nova-2-phonecall",
-            "nova-2-finance",
-            "nova-2-conversationalai",
-            "nova-2-voicemail",
-            "nova-2-video",
-            "nova-2-medical",
-            "nova-2-drivethru",
-            "nova-2-automotive",
-        ):
-            logger.warning(
-                f"{model} does not support language {language}, falling back to nova-2-general"
-            )
-            model = "nova-2-general"
+        model = _validate_model(model, language)
 
         self._api_key = api_key
 
@@ -180,6 +169,7 @@ class STT(stt.STT):
             energy_filter=energy_filter,
         )
         self._session = http_session
+        self._streams = weakref.WeakSet[SpeechStream]()
 
     def _ensure_session(self) -> aiohttp.ClientSession:
         if not self._session:
@@ -209,7 +199,7 @@ class STT(stt.STT):
 
         try:
             async with self._ensure_session().post(
-                url=_to_deepgram_url(recognize_config),
+                url=_to_deepgram_url(recognize_config, self._base_url, websocket=False),
                 data=rtc.combine_audio_frames(buffer).to_wav_bytes(),
                 headers={
                     "Authorization": f"Token {self._api_key}",
@@ -245,13 +235,69 @@ class STT(stt.STT):
         conn_options: APIConnectOptions = DEFAULT_API_CONNECT_OPTIONS,
     ) -> "SpeechStream":
         config = self._sanitize_options(language=language)
-        return SpeechStream(
+        stream = SpeechStream(
             stt=self,
             conn_options=conn_options,
             opts=config,
             api_key=self._api_key,
             http_session=self._ensure_session(),
+            base_url=self._base_url,
         )
+        self._streams.add(stream)
+        return stream
+
+    def update_options(
+        self,
+        *,
+        language: DeepgramLanguages | None = None,
+        model: DeepgramModels | None = None,
+        interim_results: bool | None = None,
+        punctuate: bool | None = None,
+        smart_format: bool | None = None,
+        sample_rate: int | None = None,
+        no_delay: bool | None = None,
+        endpointing_ms: int | None = None,
+        filler_words: bool | None = None,
+        keywords: list[Tuple[str, float]] | None = None,
+        profanity_filter: bool | None = None,
+    ):
+        if language is not None:
+            self._opts.language = language
+        if model is not None:
+            self._opts.model = _validate_model(model, language)
+        if interim_results is not None:
+            self._opts.interim_results = interim_results
+        if punctuate is not None:
+            self._opts.punctuate = punctuate
+        if smart_format is not None:
+            self._opts.smart_format = smart_format
+        if sample_rate is not None:
+            self._opts.sample_rate = sample_rate
+        if no_delay is not None:
+            self._opts.no_delay = no_delay
+        if endpointing_ms is not None:
+            self._opts.endpointing_ms = endpointing_ms
+        if filler_words is not None:
+            self._opts.filler_words = filler_words
+        if keywords is not None:
+            self._opts.keywords = keywords
+        if profanity_filter is not None:
+            self._opts.profanity_filter = profanity_filter
+
+        for stream in self._streams:
+            stream.update_options(
+                language=language,
+                model=model,
+                interim_results=interim_results,
+                punctuate=punctuate,
+                smart_format=smart_format,
+                sample_rate=sample_rate,
+                no_delay=no_delay,
+                endpointing_ms=endpointing_ms,
+                filler_words=filler_words,
+                keywords=keywords,
+                profanity_filter=profanity_filter,
+            )
 
     def _sanitize_options(self, *, language: str | None = None) -> STTOptions:
         config = dataclasses.replace(self._opts)
@@ -276,6 +322,7 @@ class SpeechStream(stt.SpeechStream):
         conn_options: APIConnectOptions,
         api_key: str,
         http_session: aiohttp.ClientSession,
+        base_url: str,
     ) -> None:
         super().__init__(
             stt=stt, conn_options=conn_options, sample_rate=opts.sample_rate
@@ -287,6 +334,7 @@ class SpeechStream(stt.SpeechStream):
         self._opts = opts
         self._api_key = api_key
         self._session = http_session
+        self._base_url = base_url
         self._speaking = False
         self._audio_duration_collector = PeriodicCollector(
             callback=self._on_audio_duration_report,
@@ -302,6 +350,47 @@ class SpeechStream(stt.SpeechStream):
 
         self._pushed_audio_duration = 0.0
         self._request_id = ""
+        self._reconnect_event = asyncio.Event()
+
+    def update_options(
+        self,
+        *,
+        language: DeepgramLanguages | None = None,
+        model: DeepgramModels | None = None,
+        interim_results: bool | None = None,
+        punctuate: bool | None = None,
+        smart_format: bool | None = None,
+        sample_rate: int | None = None,
+        no_delay: bool | None = None,
+        endpointing_ms: int | None = None,
+        filler_words: bool | None = None,
+        keywords: list[Tuple[str, float]] | None = None,
+        profanity_filter: bool | None = None,
+    ):
+        if language is not None:
+            self._opts.language = language
+        if model is not None:
+            self._opts.model = _validate_model(model, language)
+        if interim_results is not None:
+            self._opts.interim_results = interim_results
+        if punctuate is not None:
+            self._opts.punctuate = punctuate
+        if smart_format is not None:
+            self._opts.smart_format = smart_format
+        if sample_rate is not None:
+            self._opts.sample_rate = sample_rate
+        if no_delay is not None:
+            self._opts.no_delay = no_delay
+        if endpointing_ms is not None:
+            self._opts.endpointing_ms = endpointing_ms
+        if filler_words is not None:
+            self._opts.filler_words = filler_words
+        if keywords is not None:
+            self._opts.keywords = keywords
+        if profanity_filter is not None:
+            self._opts.profanity_filter = profanity_filter
+
+        self._reconnect_event.set()
 
     async def _run(self) -> None:
         closing_ws = False
@@ -395,49 +484,60 @@ class SpeechStream(stt.SpeechStream):
 
         ws: aiohttp.ClientWebSocketResponse | None = None
 
-        try:
-            live_config = {
-                "model": self._opts.model,
-                "punctuate": self._opts.punctuate,
-                "smart_format": self._opts.smart_format,
-                "no_delay": self._opts.no_delay,
-                "interim_results": self._opts.interim_results,
-                "encoding": "linear16",
-                "vad_events": True,
-                "sample_rate": self._opts.sample_rate,
-                "channels": self._opts.num_channels,
-                "endpointing": False
-                if self._opts.endpointing_ms == 0
-                else self._opts.endpointing_ms,
-                "filler_words": self._opts.filler_words,
-                "keywords": self._opts.keywords,
-                "profanity_filter": self._opts.profanity_filter,
-            }
-
-            if self._opts.language:
-                live_config["language"] = self._opts.language
-
-            ws = await asyncio.wait_for(
-                self._session.ws_connect(
-                    _to_deepgram_url(live_config, websocket=True),
-                    headers={"Authorization": f"Token {self._api_key}"},
-                ),
-                self._conn_options.timeout,
-            )
-
-            tasks = [
-                asyncio.create_task(send_task(ws)),
-                asyncio.create_task(recv_task(ws)),
-                asyncio.create_task(keepalive_task(ws)),
-            ]
-
+        while True:
             try:
-                await asyncio.gather(*tasks)
+                ws = await self._connect_ws()
+                tasks = [
+                    asyncio.create_task(send_task(ws)),
+                    asyncio.create_task(recv_task(ws)),
+                    asyncio.create_task(keepalive_task(ws)),
+                ]
+                wait_reconnect_task = asyncio.create_task(self._reconnect_event.wait())
+                try:
+                    done, _ = await asyncio.wait(
+                        [asyncio.gather(*tasks), wait_reconnect_task],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )  # type: ignore
+                    if wait_reconnect_task not in done:
+                        break
+
+                    self._reconnect_event.clear()
+                finally:
+                    await utils.aio.gracefully_cancel(*tasks, wait_reconnect_task)
             finally:
-                await utils.aio.gracefully_cancel(*tasks)
-        finally:
-            if ws is not None:
-                await ws.close()
+                if ws is not None:
+                    await ws.close()
+
+    async def _connect_ws(self) -> aiohttp.ClientWebSocketResponse:
+        live_config = {
+            "model": self._opts.model,
+            "punctuate": self._opts.punctuate,
+            "smart_format": self._opts.smart_format,
+            "no_delay": self._opts.no_delay,
+            "interim_results": self._opts.interim_results,
+            "encoding": "linear16",
+            "vad_events": True,
+            "sample_rate": self._opts.sample_rate,
+            "channels": self._opts.num_channels,
+            "endpointing": False
+            if self._opts.endpointing_ms == 0
+            else self._opts.endpointing_ms,
+            "filler_words": self._opts.filler_words,
+            "keywords": self._opts.keywords,
+            "profanity_filter": self._opts.profanity_filter,
+        }
+
+        if self._opts.language:
+            live_config["language"] = self._opts.language
+
+        ws = await asyncio.wait_for(
+            self._session.ws_connect(
+                _to_deepgram_url(live_config, base_url=self._base_url, websocket=True),
+                headers={"Authorization": f"Token {self._api_key}"},
+            ),
+            self._conn_options.timeout,
+        )
+        return ws
 
     def _check_energy_state(self, frame: rtc.AudioFrame) -> AudioEnergyFilter.State:
         if self._audio_energy_filter:
@@ -566,7 +666,7 @@ def prerecorded_transcription_to_speech_event(
     )
 
 
-def _to_deepgram_url(opts: dict, *, websocket: bool = False) -> str:
+def _to_deepgram_url(opts: dict, base_url: str, *, websocket: bool) -> str:
     if opts.get("keywords"):
         # convert keywords to a list of "keyword:intensifier"
         opts["keywords"] = [
@@ -575,5 +675,33 @@ def _to_deepgram_url(opts: dict, *, websocket: bool = False) -> str:
 
     # lowercase bools
     opts = {k: str(v).lower() if isinstance(v, bool) else v for k, v in opts.items()}
-    base_url = BASE_URL_WS if websocket else BASE_URL
+
+    if websocket and base_url.startswith("http"):
+        base_url = base_url.replace("http", "ws", 1)
+
+    elif not websocket and base_url.startswith("ws"):
+        base_url = base_url.replace("ws", "http", 1)
+
     return f"{base_url}?{urlencode(opts, doseq=True)}"
+
+
+def _validate_model(
+    model: DeepgramModels, language: DeepgramLanguages | str | None
+) -> DeepgramModels:
+    en_only_models = {
+        "nova-2-meeting",
+        "nova-2-phonecall",
+        "nova-2-finance",
+        "nova-2-conversationalai",
+        "nova-2-voicemail",
+        "nova-2-video",
+        "nova-2-medical",
+        "nova-2-drivethru",
+        "nova-2-automotive",
+    }
+    if language not in ("en-US", "en") and model in en_only_models:
+        logger.warning(
+            f"{model} does not support language {language}, falling back to nova-2-general"
+        )
+        return "nova-2-general"
+    return model
