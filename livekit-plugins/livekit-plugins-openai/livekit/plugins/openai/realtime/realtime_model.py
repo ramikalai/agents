@@ -761,10 +761,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         
         logger.info("Attemptiong to copy context")
         chat_ctx = self.chat_ctx_copy()
-        logger.info(chat_ctx)
-        logger.info(self._remote_conversation_items)
-        self._remote_converstation_items = remote_items._RemoteConversationItems()
-        logger.info(self._remote_conversation_items)
+        self._remote_conversation_items = remote_items._RemoteConversationItems()
         await self.set_chat_ctx(chat_ctx)
         
         self._is_recovering = False
@@ -893,10 +890,6 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         """
         original_ctx = self._remote_conversation_items.to_chat_context()
 
-        logger.info("Original")
-        logger.info(original_ctx)
-        logger.info("New")
-        logger.info(new_ctx)
         changes = utils._compute_changes(
             original_ctx.messages, new_ctx.messages, key_fnc=lambda x: x.id
         )
@@ -923,6 +916,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
 
         # Then create new items in order
         for prev, msg in changes.to_add:
+            logger.info(msg)
             await self.conversation.item.create(msg, prev.id if prev else None)
 
 
