@@ -759,7 +759,9 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._session_id = "not-connected"
         self.session_update()  # initial session init
         
+        print("Attemptiong to copy context")
         chat_ctx = self.chat_ctx_copy()
+        print(chat_ctx)
         self._remote_converstation_items = remote_items._RemoteConversationItems()
         await self.set_chat_ctx(chat_ctx)
         
