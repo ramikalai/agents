@@ -762,7 +762,9 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         print("Attemptiong to copy context")
         chat_ctx = self.chat_ctx_copy()
         print(chat_ctx)
+        print(self._remote_conversation_items)
         self._remote_converstation_items = remote_items._RemoteConversationItems()
+        print(self._remote_conversation_items)
         await self.set_chat_ctx(chat_ctx)
         
         self._is_recovering = False
@@ -891,6 +893,10 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         """
         original_ctx = self._remote_conversation_items.to_chat_context()
 
+        print("Original")
+        print(original_ctx)
+        print("New")
+        print(new_ctx)
         changes = utils._compute_changes(
             original_ctx.messages, new_ctx.messages, key_fnc=lambda x: x.id
         )
