@@ -556,7 +556,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
                         message,
                         extra=self._sess.logging_extra(),
                     )
-                    message_content = []
+                    message_content = [""]
                     # fut.set_result(False)
                     # return fut
                 if not isinstance(message_content, list):
@@ -915,6 +915,7 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
 
         # Then create new items in order
         for prev, msg in changes.to_add:
+            print(msg)
             await self.conversation.item.create(msg, prev.id if prev else None)
 
 
