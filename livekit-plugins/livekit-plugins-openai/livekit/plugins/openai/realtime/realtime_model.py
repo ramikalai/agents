@@ -759,12 +759,12 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._session_id = "not-connected"
         self.session_update()  # initial session init
         
-        print("Attemptiong to copy context")
+        logger.info("Attemptiong to copy context")
         chat_ctx = self.chat_ctx_copy()
-        print(chat_ctx)
-        print(self._remote_conversation_items)
+        logger.info(chat_ctx)
+        logger.info(self._remote_conversation_items)
         self._remote_converstation_items = remote_items._RemoteConversationItems()
-        print(self._remote_conversation_items)
+        logger.info(self._remote_conversation_items)
         await self.set_chat_ctx(chat_ctx)
         
         self._is_recovering = False
@@ -893,10 +893,10 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         """
         original_ctx = self._remote_conversation_items.to_chat_context()
 
-        print("Original")
-        print(original_ctx)
-        print("New")
-        print(new_ctx)
+        logger.info("Original")
+        logger.info(original_ctx)
+        logger.info("New")
+        logger.info(new_ctx)
         changes = utils._compute_changes(
             original_ctx.messages, new_ctx.messages, key_fnc=lambda x: x.id
         )
@@ -923,7 +923,6 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
 
         # Then create new items in order
         for prev, msg in changes.to_add:
-            print(msg)
             await self.conversation.item.create(msg, prev.id if prev else None)
 
 
