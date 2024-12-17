@@ -740,11 +740,10 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self._is_recovering = False
         # Handle session expiration by notifying the model to renew
         self.on("session_expired", lambda: self._loop.create_task(self.renew_session()))
-        async def timer():
-            await asyncio.sleep(120)
-            self.emit("session_expired")
-
-        asyncio.create_task(timer())
+        # async def timer():
+        #     await asyncio.sleep(120)
+        #     self.emit("session_expired")
+        # asyncio.create_task(timer())
 
     async def renew_session(self):
         logger.info("attempting to renew session")
@@ -760,9 +759,9 @@ class RealtimeSession(utils.EventEmitter[EventTypes]):
         self.session_update()  # initial session init
         
         logger.info("Attemptiong to copy context")
-        chat_ctx = self.chat_ctx_copy()
+        # chat_ctx = self.chat_ctx_copy()
         self._remote_conversation_items = remote_items._RemoteConversationItems()
-        await self.set_chat_ctx(chat_ctx)
+        # await self.set_chat_ctx(chat_ctx)
         
         self._is_recovering = False
         logger.info("session renewed successfully")
